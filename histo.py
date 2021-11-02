@@ -26,21 +26,33 @@ convenient way for different binnings and histo representations
 tbd: using fancy_hist is probably inefficient as it makes unnecessary plot
 """
 def bay_bin(data, ax=None, **histo_kwargs):
-    values, bay_bins, p = fancy_hist(data,bins='blocks')
+    counts, bay_bins, p = fancy_hist(data,bins='blocks')
     plt.close() # maybe problems if many plots
     if ax is None:
         ax = plt.gca()
-    values, bay_bins, p = ax.hist(data, bins=bay_bins, **histo_kwargs)
-    return [values, bay_bins, p]
+    counts, bay_bins, p = ax.hist(data, bins=bay_bins, **histo_kwargs)
+    return [counts, bay_bins, p]
 
 
 def knuth_bin(data, ax=None, **histo_kwargs):
-    values, knuth_bins, p = fancy_hist(data, bins='knuth')
+    counts, knuth_bins, p = fancy_hist(data, bins='knuth')
     plt.close() # maybe problems if many plots
     if ax is None:
         ax = plt.gca()
-    values, knuth_bins, p = ax.hist(data, bins=knuth_bins, **histo_kwargs)
-    return [values, knuth_bins, p]
+    counts, knuth_bins, p = ax.hist(data, bins=knuth_bins, **histo_kwargs)
+    return [counts, knuth_bins, p]
+
+def custom_norm(data, bins, norm, ax=None, **step_kwargs):
+    """
+    custom normalization, i.e. dividing all histo counts by norm
+    """
+    counts, bins = np.histogram(data, bins)
+    left = bins[:-1]
+    right = bins[1:]
+    data_values = left + (right-left)/2 # x-values for histogram
+    if ax is None:
+        ax = plt.gca()
+    ax.step(data_values, counts/norm, where='mid', **step_kwargs)
 
 def rainbowew(data, bins, package_size=1, ax=None):
     """
@@ -102,17 +114,17 @@ def log(data, N_bins=50, ax=None, **histo_kwargs):
     logbins = make_logbins(data, N_bins)
     if ax is None:
         ax = plt.gca()
-    values, bins, p = ax.hist(data, logbins, **histo_kwargs)
+    counts, bins, p = ax.hist(data, logbins, **histo_kwargs)
     ax.set_xscale('log')
-    return [values, bins, p]
+    return [counts, bins, p]
 
 def log_but_lin(data, N_bins=50, ax=None, **histo_kwargs):
     # x-axis = linear scale of logarithmic values
     logbins = make_logbins(data, N_bins)
     if ax is None:
         ax = plt.gca()
-    values, bins, p = ax.hist(np.log10(data), bins=np.log10(logbins), **histo_kwargs)
-    return [values, bins, p]
+    counts, bins, p = ax.hist(np.log10(data), bins=np.log10(logbins), **histo_kwargs)
+    return [counts, bins, p]
 
 
 #---------------------------------------------------------------------------------------------
@@ -126,10 +138,11 @@ def make_multi_bins(data_sets, bin_width):
     bins = np.arange(bin_start, bin_end, bin_width)
     return bins
 
-def multi(data_sets, bin_width, labels=None, ax=None, **hist_kwargs):
+def multi(data_sets, bin_width=0.3, norm=None, labels=None, ax=None, **plot_kwargs):
     """
     plot histogram of each array with the same bins
     data_sets = list of data arrays
+    norm = factor by which each bin is normalized (counts/norm)
     labels = label of each array
     """
     bins = make_multi_bins(data_sets, bin_width)
@@ -137,9 +150,16 @@ def multi(data_sets, bin_width, labels=None, ax=None, **hist_kwargs):
         labels = [i for i in range(len(data_sets))]
     if ax is None:
         ax = plt.gca()
-    for i,data in enumerate(data_sets):
-        ax.hist(data, bins, label=labels[i], histtype='step', **hist_kwargs)
-    return (bins, ax) #tbd: return histo values in array
+    if norm is None:
+        for i,data in enumerate(data_sets):
+            ax.hist(data, bins, label=labels[i], histtype='step', **plot_kwargs)
+            # Note: **kwargs go into plt.hist()
+        return (bins, ax) #tbd: return histo counts in array
+    else:
+        for i,data in enumerate(data_sets):
+            custom_norm(data, bins, norm, ax=ax, label=labels[i], **plot_kwargs)
+            # Note: **kwargs go into plt.step()
+        return ax  #tbd: return histo counts in array
 
 def make_multi_logbins(data_sets, N_bins):
     bin_start = np.min([np.min(data_sets[i]) for i in range(len(data_sets))])
@@ -157,19 +177,27 @@ def multi_log(data_sets, labels=None, N_bins=50, ax=None, **hist_kwargs):
     for i,data in enumerate(data_sets):
         ax.hist(data, logbins, label=labels[i], histtype='step', **hist_kwargs)
     ax.set_xscale('log')
-    return ax #tbd: return histo values in array
+    return ax #tbd: return histo counts in array
 
-def multi_log_but_lin(data_sets, N_bins=50, labels=None, ax=None, **hist_kwargs):
+def multi_log_but_lin(data_sets, N_bins=50, norm=None, labels=None, ax=None, **plot_kwargs):
     # linear scale of logarithmic values 
     logbins = make_multi_logbins(data_sets, N_bins)
     if labels is None:
         labels = [i for i in range(len(data_sets))]
     if ax is None:
         ax = plt.gca()
-    for i,data in enumerate(data_sets):
-        ax.hist(np.log10(data), bins=np.log10(logbins), label=labels[i], 
-                histtype='step', **hist_kwargs)
-    return ax #tbd: return histo values in array
+
+    if norm is None:    
+        for i,data in enumerate(data_sets):
+            ax.hist(np.log10(data), bins=np.log10(logbins), label=labels[i], 
+                    histtype='step', **plot_kwargs) #kwargs go into plt.hist()
+        return ax #tbd: return histo counts in array
+    else:
+        for i,data in enumerate(data_sets):
+            custom_norm(np.log10(data), np.log10(logbins), norm, 
+                        ax=ax, label=labels[i], **plot_kwargs) 
+                        # Note: **kwargs go into plt.step()
+        return ax  #tbd: return histo counts in array
 
 
 #---------------------------------------------------------------------------------------------
@@ -181,11 +209,11 @@ def gaussian(x, amp, cen, wid):
     """1-d gaussian: gaussian(x, amp, cen, wid)"""
     return (amp / (sqrt(2*pi) * wid)) * exp(-(x-cen)**2 / (2*wid**2))
 
-def make_gauss_fit(values, bins):
+def make_gauss_fit(counts, bins):
     left = bins[:-1]
     right = bins[1:]
     x = (right-left)/2 + left 
-    y = values
+    y = counts
     gmodel = Model(gaussian)
     params = gmodel.make_params(cen=np.mean(x), 
                                 amp=np.max(y), wid=np.std(x))#1)
@@ -195,13 +223,13 @@ def make_gauss_fit(values, bins):
     sigma = result.params['wid'].value
     return(amp, mu, abs(sigma), result.chisqr, result.redchi)
 
-def gauss_fit(values, bins, plotpoints=200, ax=None, **histo_kwargs):
-    amp, mu, sigma, chisqr, redchi = make_gauss_fit(values, bins)
+def gauss_fit(counts, bins, plotpoints=200, ax=None, **fit_kwargs):
+    amp, mu, sigma, chisqr, redchi = make_gauss_fit(counts, bins)
     x_plot = np.linspace(bins[0], bins[-1], plotpoints)
     y_plot = gaussian(x_plot, amp, mu, sigma)
     if ax is None:
         ax = plt.gca()
-    ax.plot(x_plot,y_plot, marker='', color='k', zorder=13148, **histo_kwargs)
+    ax.plot(x_plot,y_plot, marker='', color='k', zorder=13148, **fit_kwargs)
     return(amp, mu, abs(sigma), chisqr, redchi)
 
 
